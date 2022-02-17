@@ -318,7 +318,7 @@ static int remoteWriteData(pid_t pid, void* dst, void* data, int size){
  */
 static int remoteWriteString(pid_t pid, void* dst, const char *str)
 {
-    return remoteWriteData(pid, dst, (void*)str, strlen(str)+1);
+    return remoteWriteData(pid, dst, (void*)str, 100);
 }
 
 
@@ -401,7 +401,9 @@ static long getRemoteFunResult(pid_t pid){
 /**
  * inject
  */
-static int injectRemoteProcess(pid_t pid){
+static int injectRemoteProcess(pid_t pid, char *so_path){
+    char path[100] = {0};
+
     //attach target process
     if(ptraceAttach(pid) < 0){
         return -1;
@@ -445,19 +447,18 @@ static int injectRemoteProcess(pid_t pid){
     //get mmap result
     void* mmap_result = (void*)getRemoteFunResult(pid);
     if(mmap_result == NULL){
-        printf("[-] getRemoteFunAddr dlopen failed\n");
+        printf("[-] get mmap result failed\n");
         return -1;
     }
     printf("[+] mmap_result=%p\n", mmap_result);
 
     //write inject_so path
-    char path[100] = {"/data/local/tmp/libInject.so"};
-    remoteWriteString(pid, mmap_result, path);
+    memcpy(path, so_path, strlen(so_path));
+    if(remoteWriteString(pid, mmap_result, path) < 0){
+        printf("[-] write inject so path failed\n");
+        return -1;
+    }
 
-    //TEST
-//    char path2[100] = {0};
-//    remoteReadData(pid, mmap_result, path2, sizeof(path2));
-//    printf("[+] path2=%s\n", path2);
 
     /**
      * get dlopen addr
@@ -497,19 +498,21 @@ static int injectRemoteProcess(pid_t pid){
 
 int main(int argc, char* argv[]){
     pid_t pid = 0;
-    if(argc < 2){
+    char* so_name = NULL;
+    if(argc < 3){
         printf("[-] missing command line arguments.\n");
         return 0;
     }
 
     pid = atoi(argv[1]);
-    printf("[+] start inject %d process\n", pid);
+    so_name = argv[2];
+    printf("[+] start inject %s to %d process\n", so_name, pid);
 
     system("su -c setenforce 0");
-    if(injectRemoteProcess(pid) < 0){
+    if(injectRemoteProcess(pid, so_name) < 0){
         printf("[-] inject failed\n");
     } else{
-        printf("[+] complete inject %d process\n", pid);
+        printf("[+] complete inject %s to %d process\n", so_name, pid);
     }
     return 0;
 }
