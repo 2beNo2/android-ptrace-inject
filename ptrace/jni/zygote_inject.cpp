@@ -276,8 +276,8 @@ static int remoteReadData(pid_t pid, void* dst, void* data, int size){
 
 /**
  * remote write data
- *  pid --> target process pid
- *  dst --> target process addr
+ *  pid  --> target process pid
+ *  dst  --> target process addr
  *  data --> the write data
  *  size --> data size
  */
@@ -324,10 +324,10 @@ static int remoteWriteString(pid_t pid, void* dst, const char *str)
 
 /**
  * call target process fun
- *  pid --> target process pid
+ *  pid         --> target process pid
  *  remote_addr --> target process fun addr
- *  regs --> register
- *  param_num --> the param count
+ *  regs        --> register
+ *  param_num   --> the param count
  *  ...
  */
 static int callRemoteFun(pid_t pid, void* remote_addr, pt_regs* regs, int param_num, ...){
@@ -452,6 +452,7 @@ static int injectRemoteProcess(pid_t pid, char *so_path){
     }
     printf("[+] mmap_result=%p\n", mmap_result);
 
+
     //write inject_so path
     memcpy(path, so_path, strlen(so_path));
     if(remoteWriteString(pid, mmap_result, path) < 0){
@@ -483,9 +484,38 @@ static int injectRemoteProcess(pid_t pid, char *so_path){
 
     //get dlopen result
     void* handle = (void*)getRemoteFunResult(pid);
-    printf("[+] dlopen handle=%p\n", handle);
+    if(handle == 0){
+        //if dlopen failed, get dlerror
+        void* dlerror_addr = getRemoteFunAddr(pid, "/libdl.so", (void*)dlerror);
+        if(dlerror_addr == NULL){
+            printf("[-] getRemoteFunAddr dlerror failed\n");
+            return -1;
+        }
+        printf("[-] dlerror_addr=%p\n", dlerror_addr);
 
+        if(callRemoteFun(pid, dlerror_addr, &new_regs, 0) < 0){
+            printf("[-] callRemoteFun dlerror failed\n");
+            return -1;
+        }
+        waitpid(pid, NULL, WUNTRACED);
 
+        long dlerror_data = getRemoteFunResult(pid);
+        if(dlerror_data  == 0){
+            printf("[-] getRemoteFunResult dlerror failed\n");
+            return -1;
+        }
+        printf("[-] dlerror_data=%lx\n", dlerror_data);
+
+        char errbuf[100] = {0};
+        remoteReadData(pid, (void*)dlerror_data, (void*)errbuf, 100);
+        printf("[-] dlerror = %s\n", errbuf);
+        
+    }else{
+        printf("[+] dlopen handle=%p\n", handle);
+    }
+    
+
+EXIT:
     //detach
     if(ptraceDetach(pid, &old_regs) < 0){
         return -1;
@@ -506,13 +536,13 @@ int main(int argc, char* argv[]){
 
     pid = atoi(argv[1]);
     so_name = argv[2];
-    printf("[+] start inject %s to %d process\n", so_name, pid);
+    printf("[+] start inject %s to pid:%d process\n", so_name, pid);
 
     system("su -c setenforce 0");
     if(injectRemoteProcess(pid, so_name) < 0){
         printf("[-] inject failed\n");
     } else{
-        printf("[+] complete inject %s to %d process\n", so_name, pid);
+        printf("[+] complete inject %s to pid:%d process\n", so_name, pid);
     }
     return 0;
 }
