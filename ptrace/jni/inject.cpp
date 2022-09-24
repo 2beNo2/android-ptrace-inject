@@ -38,7 +38,7 @@ static int Inject(pid_t pid, const char *so_path){
     // get target process mmap addr
     mmap_addr = GetRemoteFunAddr(pid, "libc.so", (void*)mmap);
     if(mmap_addr == NULL){
-        printf("[-] getRemoteFunAddr mmap failed\n");
+        printf("[-] GetRemoteFunAddr mmap failed\n");
         return -1;
     }
     printf("[+] mmap_addr = %p\n", mmap_addr);
@@ -55,7 +55,6 @@ static int Inject(pid_t pid, const char *so_path){
     }
     printf("[+] mmap_result=%p\n", mmap_result);
 
-
     //write inject_so path
     if(RemoteWriteString(pid, mmap_result, so_path) < 0){
         printf("[-] write inject so path failed\n");
@@ -65,20 +64,22 @@ static int Inject(pid_t pid, const char *so_path){
 
     /**
      * get dlopen addr
-     *  ANDROID 10.0  /libdl.so --> dlopen
+     *  ANDROID 10.0  /libdl.so -> dlopen
      * */
     dlopen_addr = GetRemoteFunAddr(pid, "/libdl.so", (void*)dlopen);
     if(dlopen_addr == NULL){
-        printf("[-] getRemoteFunAddr dlopen failed\n");
+        printf("[-] GetRemoteFunAddr dlopen failed\n");
         return -1;
     }
     printf("[+] dlopen_addr=%p\n", dlopen_addr);
-    handle = (void*)CallRemoteFun(pid, dlopen_addr, &new_regs, 2, mmap_result, RTLD_NOW);
+
+    handle = (void*)CallRemoteFun(pid, dlopen_addr, &new_regs, 2, 
+                                    mmap_result, RTLD_NOW);
     if(handle == 0){
         //if dlopen failed, get dlerror
         dlerror_addr = GetRemoteFunAddr(pid, "/libdl.so", (void*)dlerror);
         if(dlerror_addr == NULL){
-            printf("[-] getRemoteFunAddr dlerror failed\n");
+            printf("[-] GetRemoteFunAddr dlerror failed\n");
             return -1;
         }
         printf("[-] dlerror_addr=%p\n", dlerror_addr);
@@ -104,7 +105,6 @@ EXIT:
     }
     return 0;
 }
-
 
 
 int main(int argc, char* argv[]){

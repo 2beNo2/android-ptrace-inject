@@ -272,8 +272,5 @@ static long CallRemoteFun(pid_t pid, void* fun_addr, pt_regs* regs, int param_nu
     return new_regs.ARM_r0;
 }
 
-
 #endif //PTRACE_UTILS_H
-
-
 
