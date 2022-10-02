@@ -14,6 +14,17 @@
 
 #include "inject_utils.h"
 
+#if defined(__LP64__)
+#define PTRACE_GETREGS PTRACE_GETREGSET
+#define PTRACE_SETREGS PTRACE_SETREGSET
+#define pt_regs  user_pt_regs
+#define uregs    regs
+#define ARM_pc   pc
+#define ARM_sp   sp
+#define ARM_cpsr pstate
+#define ARM_lr   regs[30]
+#define ARM_r0   regs[0]
+#endif
 
 /**
  * is zygote process.
