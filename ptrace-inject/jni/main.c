@@ -24,29 +24,33 @@ int main(int argc, char* argv[])
     pid = atoi(argv[1]);
     so_name = argv[2];
     printf("[+] start inject [%s] to [pid:%d] process\n", so_name, pid);
-
-#if defined(__aarch64__)
     system("su -c setenforce 0");
-    system("mount -o rw,remount /");
-    system("mount -o rw,remount /system");
-    snprintf(cmd, sizeof(cmd), "cp %s /system/lib64/libtest.so", so_name);
-    system(cmd);
-    system("chmod 777 /system/lib64/libtest.so");
-    system("chcon u:object_r:system_file:s0 /system/lib64/libtest.so");
+
+// #if defined(__aarch64__)
+//     system("mount -o rw,remount /");
+//     system("mount -o rw,remount /system");
+//     snprintf(cmd, sizeof(cmd), "cp %s /system/lib64/libtest.so", so_name);
+//     system(cmd);
+//     system("chmod 777 /system/lib64/libtest.so");
+//     system("chcon u:object_r:system_file:s0 /system/lib64/libtest.so");
+//     if(start_inject(pid, so_name) < 0){
+//         printf("[-] inject failed\n");
+//     }else{
+//         printf("[+] inject ok\n");
+//     }
+// #else
+//     if(start_inject(pid, so_name) < 0){
+//         printf("[-] inject failed\n");
+//     }else{
+//         printf("[+] inject ok\n");
+//     }
+// #endif
 
     if(start_inject(pid, so_name) < 0){
         printf("[-] inject failed\n");
     }else{
         printf("[+] inject ok\n");
     }
-
-#else
-    if(start_inject(pid, so_name) < 0){
-        printf("[-] inject failed\n");
-    }else{
-        printf("[+] inject ok\n");
-    }
-#endif
     fflush(stdout);
     return 0;
 }
