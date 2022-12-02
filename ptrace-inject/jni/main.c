@@ -31,19 +31,10 @@ int main(int argc, char* argv[])
     system("mount -o rw,remount /system");
     snprintf(cmd, sizeof(cmd), "cp %s /system/lib64/libtest.so", so_name);
     system(cmd);
-    // system("chmod 777 /system/lib64/libtest.so");
-    // system("chcon u:object_r:system_file:s0 /system/lib64/libtest.so");
+    system("chmod 777 /system/lib64/libtest.so");
+    system("chcon u:object_r:system_file:s0 /system/lib64/libtest.so");
 
-    // if(start_inject(pid, "/system/lib64/libtest.so") < 0){
-    //     printf("[-] inject failed\n");
-    // }else{
-    //     printf("[+] inject ok\n");
-    // }
-
-    system("chmod 777 /data/local/tmp/libtest.so");
-    system("chcon u:object_r:system_file:s0 /data/local/tmp/libtest.so");
-
-    if(start_inject(pid, "/data/local/tmp/libtest.so") < 0){
+    if(start_inject(pid, so_name) < 0){
         printf("[-] inject failed\n");
     }else{
         printf("[+] inject ok\n");

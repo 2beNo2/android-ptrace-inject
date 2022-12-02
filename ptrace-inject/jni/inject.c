@@ -87,10 +87,10 @@ static int ptrace_get_regs(pid_t pid, struct pt_regs* regs)
     if(ptrace(PTRACE_GETREGS, pid, (void*)NT_PRSTATUS, &iov) < 0) return -1;
     if (iov.iov_len != expected_size) return -1;
     return 0;
-#endif
-
+#else
     if(ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) return -1;
     return 0;
+#endif
 }
 
 
@@ -105,9 +105,10 @@ static int ptrace_set_regs(pid_t pid, struct pt_regs* regs)
     iov.iov_len = sizeof(struct pt_regs);
     if(ptrace(PTRACE_SETREGS, pid, (void*)NT_PRSTATUS, &iov) < 0) return -1;
     return 0;
-#endif
+#else
     if(ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) return -1;
     return 0;
+#endif
 }
 
 
@@ -232,19 +233,19 @@ static long remote_call_fun(pid_t pid, void* fun_addr, struct pt_regs* regs, int
     va_start(arglist, param_num);
     if(param_num < 9){
         for(int i = 0; i < param_num; i++){
-            new_regs.uregs[i] = va_arg(arglist, int);
+            new_regs.uregs[i] = va_arg(arglist, long);
         }
     }
     else{
         for(int i = 0; i < 8; i++){
-            new_regs.uregs[i] = va_arg(arglist, int);
+            new_regs.uregs[i] = va_arg(arglist, long);
         }
 
         int stack_num = param_num - 8;
         new_regs.ARM_sp -= stack_num * 8;
         int n = 0;
         for(int i = 0; i < stack_num; i++){
-            n = va_arg(arglist, int);
+            n = va_arg(arglist, long);
             if(remote_write_data(pid, (void*)(new_regs.ARM_sp + i * 8), (void*)&n, 8) < 0)
                 return -1;
         }
@@ -296,42 +297,42 @@ int start_inject(pid_t pid, const char *so_path){
     struct pt_regs new_regs = {0};
     char errbuf[MAX_LENGTH] = {0};
 
-#define fatal(fmt, args...) do {LOGE(fmt, ##args); goto ERR_EXIT;} while(0)
+#define fatal(fmt, args...) do {printf(fmt, ##args); goto ERR_EXIT;} while(0)
 
     //attach target process
     if(ptrace_attach_process(pid) < 0) {
-        LOGE("[-] PTRACE_ATTACH FAILED:[%s]", strerror(errno));
+        printf("[-] PTRACE_ATTACH FAILED:[%s]\n", strerror(errno));
         return -1;
     }
-    LOGD("[+] PTRACE_ATTACH OK");
+    printf("[+] PTRACE_ATTACH OK\n");
 
     if(ptrace_get_regs(pid, &old_regs) < 0) {
-        LOGE("[-] PTRACE_GETREGS FAILED:[%s]", strerror(errno));
+        printf("[-] PTRACE_GETREGS FAILED:[%s]\n", strerror(errno));
         return -1;
     }
-    LOGD("[+] PTRACE_GETREGS OK");
+    printf("[+] PTRACE_GETREGS OK\n");
     new_regs = old_regs;
 
     // get target process mmap addr
     mmap_addr = proc_get_remote_fun_addr(pid, "libc.so", (void*)mmap);
     if(mmap_addr == NULL) 
-        fatal("[-] GET_MMAP_FUN FAILED");
-    LOGD("[+] MMAP_FUN = %p", mmap_addr);
+        fatal("[-] GET_MMAP_FUN FAILED\n");
+    printf("[+] MMAP_FUN = %p\n", mmap_addr);
     mmap_result = (void*)remote_call_fun(pid, mmap_addr, &new_regs, 6,
                                  NULL,
-                                 0x1000,
+                                 0x4000,
                                  PROT_EXEC | PROT_READ | PROT_WRITE,
                                  MAP_PRIVATE  | MAP_ANONYMOUS,
                                  0,
                                  0);
     if(mmap_result == MAP_FAILED) 
-        fatal("[-] REMOTE_CALL_MMAP FAILED:[%s]", strerror(errno));
-    LOGD("[+] MMAP_RESULT = %p", mmap_result);
+        fatal("[-] REMOTE_CALL_MMAP FAILED:[%s]\n", strerror(errno));
+    printf("[+] MMAP_RESULT = %p\n", mmap_result);
 
     //write inject_so path
     if(remote_write_string(pid, mmap_result, so_path) < 0) 
-        fatal("[-] REMOTE_WRITE FAILED:[%s]", strerror(errno));
-    LOGD("[+] REMOTE_WRITE OK");
+        fatal("[-] REMOTE_WRITE FAILED:[%s]\n", strerror(errno));
+    printf("[+] REMOTE_WRITE OK\n");
 
     /**
      * get dlopen addr
@@ -339,25 +340,25 @@ int start_inject(pid_t pid, const char *so_path){
      * */
     dlopen_addr = proc_get_remote_fun_addr(pid, "/libdl.so", (void*)dlopen);
     if(dlopen_addr == NULL) 
-        fatal("[-] GET_DLOPEN_FUN FAILED");
-    LOGD("[+] DLOPEN_FUN = %p", dlopen_addr);
+        fatal("[-] GET_DLOPEN_FUN FAILED\n");
+    printf("[+] DLOPEN_FUN = %p\n", dlopen_addr);
     handle = (void*)remote_call_fun(pid, dlopen_addr, &new_regs, 2, mmap_result, RTLD_NOW);
 
     if(handle == NULL){
         //if dlopen failed, get dlerror
         dlerror_addr = proc_get_remote_fun_addr(pid, "/libdl.so", (void*)dlerror);
         if(dlerror_addr == NULL) 
-            fatal("[-] GET_DLERROR_FUN FAILED");
-        LOGD("[+] DLERROR_FUN = %p", dlerror_addr);
+            fatal("[-] GET_DLERROR_FUN FAILED\n");
+        printf("[+] DLERROR_FUN = %p\n", dlerror_addr);
 
         dlerror_data = remote_call_fun(pid, dlerror_addr, &new_regs, 0);
         if(dlerror_data <= 0) 
-            fatal("[-] REMOTE_CALL_DLERROR FAILED");
+            fatal("[-] REMOTE_CALL_DLERROR FAILED\n");
         remote_read_data(pid, (void*)dlerror_data, (void*)errbuf, MAX_LENGTH);
-        LOGD("[+] DLERROR_RESULT = %s", errbuf);
+        printf("[+] DLERROR_RESULT = %s\n", errbuf);
         
     }else{
-        LOGD("[+] DLOPEN_RESULT = %p", handle);
+        printf("[+] DLOPEN_RESULT = %p\n", handle);
     }
     
 #undef fatal    
