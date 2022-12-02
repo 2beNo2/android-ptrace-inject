@@ -1,5 +1,5 @@
 # Android-Inject
-### `ptrace-inject:` 
+## ptrace-inject: 
   - use ptrace-api inject arm/arm64 process
   #### how to build:
   - make sure have `ndk-build` in your PATH
@@ -13,3 +13,5 @@
   blueline:/data/local/tmp # ./inject pid /data/local/tmp/libtest.so
   ```
 
+## shellcode-inject: 
+  - shellcode
