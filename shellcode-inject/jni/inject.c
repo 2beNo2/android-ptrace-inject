@@ -336,7 +336,6 @@ int start_inject(pid_t pid, const char *so_path)
     printf("[+] PTRACE_GETREGS OK\n");
     new_regs = old_regs;
 
-	printf("pc=%p lr=%p sp=%p fp=%p\n", old_regs.ARM_pc, old_regs.ARM_lr, old_regs.ARM_sp, old_regs.ARM_cpsr);
     /**
      * get dlopen addr
      *  ANDROID 10.0  /libdl.so -> dlopen
@@ -365,16 +364,7 @@ int start_inject(pid_t pid, const char *so_path)
     inject_path_len = inject_path_len / 4 + (inject_path_len % 4 ? 1 : 0);
 	sopath_addr = (void*)(new_regs.ARM_sp - (inject_path_len * 4) - sizeof(shell_code_arm));
 	shell_code_arm[18] = (size_t)sopath_addr;	
-
-    // printf("old_regs.ARM_lr=%p\n", old_regs.ARM_lr);
-    // printf("old_regs.ARM_pc=%p\n", old_regs.ARM_pc);
-    // printf("old_regs.ARM_sp=%p\n", old_regs.ARM_sp);
-    // printf("old_regs.ARM_cpsr=%p\n", old_regs.ARM_cpsr);
-    // for (size_t i = 0; i < sizeof(shell_code_arm) / sizeof(shell_code_arm[0]); i++)
-    // {
-    //    printf("pc=%p\n", shell_code_arm[i]);
-    // }
-    // printf("codeaddr=%p\n", (new_regs.ARM_sp - sizeof(shell_code_arm)));
+    new_regs.ARM_sp = new_regs.ARM_sp - (inject_path_len * 4) - sizeof(shell_code_arm);
 
     //write inject_so path
     if(remote_write_data(pid, sopath_addr, (void*)so_path, strlen(so_path) + 1) < 0) 
@@ -386,23 +376,36 @@ int start_inject(pid_t pid, const char *so_path)
         fatal("[-] REMOTE_WRITE_CODE FAILED:[%s]\n", strerror(errno));
     printf("[+] REMOTE_WRITE_CODE OK\n");
 
-    // 调用mprotect返回-1，待处理
-    new_regs.uregs[0] = (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm));
-    new_regs.uregs[1] = 0x1000;
-    new_regs.uregs[2] = PROT_READ | PROT_WRITE | PROT_EXEC; 
-    //new_regs.ARM_lr = (size_t)(new_regs.ARM_sp - sizeof(shell_code_arm)); // arm ? thumb ? 
-    new_regs.ARM_lr = old_regs.ARM_pc;
-    new_regs.ARM_pc = (size_t)mprotect_addr & ~1; // arm ? thumb ? 
-    if ((size_t)mprotect_addr & 1) {
-        new_regs.ARM_cpsr |= 0x20;   //thumb 0010 0000
-    }
-    else  {
-        new_regs.ARM_cpsr &= ~0x20;  //arm   0000 0000
-    }
+    // 调用mprotect 貌似没效果
+    printf("dst = %p\n", (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm)));
+    size_t ret = remote_call_fun(pid, mprotect_addr, &new_regs, 3, 
+        (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm)), 0x1000, PROT_READ | PROT_WRITE | PROT_EXEC);
+    if(ret < 0)
+        fatal("[-] REMOTE_WRITE_PATH FAILED:[%s]\n", strerror(errno));
 
+    // 调用mprotect返回-1，待处理
+    // new_regs.uregs[0] = (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm));
+    // new_regs.uregs[1] = 0x1000;
+    // new_regs.uregs[2] = PROT_READ | PROT_WRITE | PROT_EXEC; 
+    // new_regs.ARM_lr = (size_t)(new_regs.ARM_sp - sizeof(shell_code_arm)); // arm ? thumb ? 
+    // //new_regs.ARM_lr = old_regs.ARM_pc;
+    // new_regs.ARM_pc = (size_t)mprotect_addr & ~1; // arm ? thumb ? 
+    // if ((size_t)mprotect_addr & 1) {
+    //     new_regs.ARM_cpsr |= 0x20;   //thumb 0010 0000
+    // }
+    // else  {
+    //     new_regs.ARM_cpsr &= ~0x20;  //arm   0000 0000
+    // }
+
+    // printf("old_regs.ARM_lr=%p\n", old_regs.ARM_lr);
+    // printf("old_regs.ARM_pc=%p\n", old_regs.ARM_pc);
+    // printf("old_regs.ARM_sp=%p\n", old_regs.ARM_sp);
+    // printf("old_regs.ARM_cpsr=%p\n", old_regs.ARM_cpsr);
+    // printf("codeaddr=%p\n", (new_regs.ARM_sp - sizeof(shell_code_arm)));
     // printf("new_regs.ARM_1=%p\n", new_regs.uregs[0]);
     // printf("new_regs.ARM_2=%p\n", new_regs.uregs[1]);
     // printf("new_regs.ARM_3=%p\n", new_regs.uregs[2]);
+    // printf("new_regs.ARM_sp=%p\n", new_regs.ARM_sp);
     // printf("new_regs.ARM_lr=%p\n", new_regs.ARM_lr);
     // printf("new_regs.ARM_pc=%p\n", new_regs.ARM_pc);
 
