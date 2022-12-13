@@ -25,7 +25,8 @@ int main(int argc, char* argv[])
     so_name = argv[2];
     printf("[+] start inject [%s] to [pid:%d] process\n", so_name, pid);
     fflush(stdout);
-
+    system("su -c setenforce 0");
+    
     if(start_inject(pid, so_name) < 0){
         printf("[-] inject failed\n");
     }else{

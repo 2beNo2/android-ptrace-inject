@@ -282,19 +282,43 @@ static long remote_call_fun(pid_t pid, void* fun_addr, struct pt_regs* regs, int
 }
 
 
+unsigned int shell_code_arm[] = 
+{
+    0xe59f0040, //0   +0    ldr  r0, [pc, #64]   ; 48 <.text+0x48>
+    0xe3a01000, //1   +4    mov  r1, #0  ; 0x0
+    0xe1a0e00f, //2   +8    mov  lr, pc
+    0xe59ff038, //3   +c    ldr  pc, [pc, #56]   ; 4c <.text+0x4c>
+    0xe59fd02c, //4   +10   ldr  sp, [pc, #44]   ; 44 <.text+0x44>
+    0xe59f0010, //5   +14   ldr  r0, [pc, #16]   ; 30 <.text+0x30>
+    0xe59f1010, //6   +18   ldr  r1, [pc, #16]   ; 34 <.text+0x34>
+    0xe59f2010, //7   +1c   ldr  r2, [pc, #16]   ; 38 <.text+0x38>
+    0xe59f3010, //8   +20   ldr  r3, [pc, #16]   ; 3c <.text+0x3c>
+    0xe59fe010, //9   +24   ldr  lr, [pc, #16]   ; 40 <.text+0x40>
+    0xe59ff010, //10  +28   ldr  pc, [pc, #16]   ; 44 <.text+0x44>
+    0xe1a00000, //11  +2c   nop                  r0
+    0xe1a00000, //12  +30   nop                  r1 
+    0xe1a00000, //13  +34   nop                  r2 
+    0xe1a00000, //14  +38   nop                  r3 
+    0xe1a00000, //15  +3c   nop                  lr 
+    0xe1a00000, //16  +40   nop                  pc
+    0xe1a00000, //17  +44   nop                  sp
+    0xe1a00000, //18  +48   nop                  addr of libname
+    0xe1a00000, //19  +4c   nop                  dlopenaddr
+};
+
+
 /**
  * inject
  */
-int start_inject(pid_t pid, const char *so_path){
-    void* mmap_addr = NULL;
-    void* mmap_result = NULL;
+int start_inject(pid_t pid, const char *so_path)
+{
     void* dlopen_addr = NULL;
-    void* handle = NULL;
-    void* dlerror_addr = NULL;
-    long  dlerror_data = 0;
+    void* mprotect_addr = NULL;
+    void* sopath_addr = NULL;
+    size_t inject_path_len = 0;
     struct pt_regs old_regs = {0};
     struct pt_regs new_regs = {0};
-    char errbuf[MAX_LENGTH] = {0};
+
 
 #define fatal(fmt, args...) do {printf(fmt, ##args); goto ERR_EXIT;} while(0)
 
@@ -312,27 +336,7 @@ int start_inject(pid_t pid, const char *so_path){
     printf("[+] PTRACE_GETREGS OK\n");
     new_regs = old_regs;
 
-    // get target process mmap addr
-    mmap_addr = proc_get_remote_fun_addr(pid, "libc.so", (void*)mmap);
-    if(mmap_addr == NULL) 
-        fatal("[-] GET_MMAP_FUN FAILED\n");
-    printf("[+] MMAP_FUN = %p\n", mmap_addr);
-    mmap_result = (void*)remote_call_fun(pid, mmap_addr, &new_regs, 6,
-                                 NULL,
-                                 0x4000,
-                                 PROT_EXEC | PROT_READ | PROT_WRITE,
-                                 MAP_PRIVATE  | MAP_ANONYMOUS,
-                                 0,
-                                 0);
-    if(mmap_result == MAP_FAILED) 
-        fatal("[-] REMOTE_CALL_MMAP FAILED:[%s]\n", strerror(errno));
-    printf("[+] MMAP_RESULT = %p\n", mmap_result);
-
-    //write inject_so path
-    if(remote_write_string(pid, mmap_result, so_path) < 0) 
-        fatal("[-] REMOTE_WRITE FAILED:[%s]\n", strerror(errno));
-    printf("[+] REMOTE_WRITE OK\n");
-
+	printf("pc=%p lr=%p sp=%p fp=%p\n", old_regs.ARM_pc, old_regs.ARM_lr, old_regs.ARM_sp, old_regs.ARM_cpsr);
     /**
      * get dlopen addr
      *  ANDROID 10.0  /libdl.so -> dlopen
@@ -341,25 +345,67 @@ int start_inject(pid_t pid, const char *so_path){
     if(dlopen_addr == NULL) 
         fatal("[-] GET_DLOPEN_FUN FAILED\n");
     printf("[+] DLOPEN_FUN = %p\n", dlopen_addr);
-    handle = (void*)remote_call_fun(pid, dlopen_addr, &new_regs, 2, mmap_result, RTLD_NOW);
-
-    if(handle == NULL){
-        //if dlopen failed, get dlerror
-        dlerror_addr = proc_get_remote_fun_addr(pid, "/libdl.so", (void*)dlerror);
-        if(dlerror_addr == NULL) 
-            fatal("[-] GET_DLERROR_FUN FAILED\n");
-        printf("[+] DLERROR_FUN = %p\n", dlerror_addr);
-
-        dlerror_data = remote_call_fun(pid, dlerror_addr, &new_regs, 0);
-        if(dlerror_data <= 0) 
-            fatal("[-] REMOTE_CALL_DLERROR FAILED\n");
-        remote_read_data(pid, (void*)dlerror_data, (void*)errbuf, MAX_LENGTH);
-        printf("[+] DLERROR_RESULT = %s\n", errbuf);
-        
-    }else{
-        printf("[+] DLOPEN_RESULT = %p\n", handle);
-    }
     
+    //get mprotect addr
+    mprotect_addr = proc_get_remote_fun_addr(pid, "/libc.so", (void*)mprotect);
+    if(mprotect_addr == NULL) 
+        fatal("[-] GET_MPROTECT_FUN FAILED\n");
+    printf("[+] MPROTECT_FUN = %p\n", mprotect_addr);
+
+	shell_code_arm[11] = new_regs.uregs[0];
+	shell_code_arm[12] = new_regs.uregs[1];
+	shell_code_arm[13] = new_regs.uregs[2];
+	shell_code_arm[14] = new_regs.uregs[3];
+	shell_code_arm[15] = new_regs.ARM_lr;
+	shell_code_arm[16] = new_regs.ARM_pc;
+	shell_code_arm[17] = new_regs.ARM_sp;
+	shell_code_arm[19] = (size_t)dlopen_addr; // ldr fix T
+
+    inject_path_len = strlen(so_path) + 1;
+    inject_path_len = inject_path_len / 4 + (inject_path_len % 4 ? 1 : 0);
+	sopath_addr = (void*)(new_regs.ARM_sp - (inject_path_len * 4) - sizeof(shell_code_arm));
+	shell_code_arm[18] = (size_t)sopath_addr;	
+
+    // printf("old_regs.ARM_lr=%p\n", old_regs.ARM_lr);
+    // printf("old_regs.ARM_pc=%p\n", old_regs.ARM_pc);
+    // printf("old_regs.ARM_sp=%p\n", old_regs.ARM_sp);
+    // printf("old_regs.ARM_cpsr=%p\n", old_regs.ARM_cpsr);
+    // for (size_t i = 0; i < sizeof(shell_code_arm) / sizeof(shell_code_arm[0]); i++)
+    // {
+    //    printf("pc=%p\n", shell_code_arm[i]);
+    // }
+    // printf("codeaddr=%p\n", (new_regs.ARM_sp - sizeof(shell_code_arm)));
+
+    //write inject_so path
+    if(remote_write_data(pid, sopath_addr, (void*)so_path, strlen(so_path) + 1) < 0) 
+        fatal("[-] REMOTE_WRITE_PATH FAILED:[%s]\n", strerror(errno));
+    printf("[+] REMOTE_WRITE_PATH OK\n");
+
+	//write code to stack
+    if(remote_write_data(pid, (void*)(new_regs.ARM_sp - sizeof(shell_code_arm)), (void*)shell_code_arm, sizeof(shell_code_arm)) < 0) 
+        fatal("[-] REMOTE_WRITE_CODE FAILED:[%s]\n", strerror(errno));
+    printf("[+] REMOTE_WRITE_CODE OK\n");
+
+    // 调用mprotect返回-1，待处理
+    new_regs.uregs[0] = (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm));
+    new_regs.uregs[1] = 0x1000;
+    new_regs.uregs[2] = PROT_READ | PROT_WRITE | PROT_EXEC; 
+    //new_regs.ARM_lr = (size_t)(new_regs.ARM_sp - sizeof(shell_code_arm)); // arm ? thumb ? 
+    new_regs.ARM_lr = old_regs.ARM_pc;
+    new_regs.ARM_pc = (size_t)mprotect_addr & ~1; // arm ? thumb ? 
+    if ((size_t)mprotect_addr & 1) {
+        new_regs.ARM_cpsr |= 0x20;   //thumb 0010 0000
+    }
+    else  {
+        new_regs.ARM_cpsr &= ~0x20;  //arm   0000 0000
+    }
+
+    // printf("new_regs.ARM_1=%p\n", new_regs.uregs[0]);
+    // printf("new_regs.ARM_2=%p\n", new_regs.uregs[1]);
+    // printf("new_regs.ARM_3=%p\n", new_regs.uregs[2]);
+    // printf("new_regs.ARM_lr=%p\n", new_regs.ARM_lr);
+    // printf("new_regs.ARM_pc=%p\n", new_regs.ARM_pc);
+
 #undef fatal    
     if(ptrace_detach_process(pid, &old_regs) < 0) return -1;
     return 0;
