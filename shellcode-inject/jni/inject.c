@@ -382,6 +382,7 @@ int start_inject(pid_t pid, const char *so_path)
         (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm)), 0x1000, PROT_READ | PROT_WRITE | PROT_EXEC);
     if(ret < 0)
         fatal("[-] REMOTE_WRITE_PATH FAILED:[%s]\n", strerror(errno));
+    printf("dst = %p\n", ret);
 
     // 调用mprotect返回-1，待处理
     // new_regs.uregs[0] = (size_t)PAGE_START(new_regs.ARM_sp - sizeof(shell_code_arm));
